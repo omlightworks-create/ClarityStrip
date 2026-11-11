@@ -46,8 +46,24 @@ jobs:
           A=build/ClarityStrip_artefacts/Release
           mkdir -p dist/ClarityStrip-macOS
           cp -R "$A/VST3/ClarityStrip.vst3" "$A/AU/ClarityStrip.component" "$A/Standalone/ClarityStrip.app" dist/ClarityStrip-macOS/
-          cp "mac/Install ClarityStrip.command" dist/ClarityStrip-macOS/
-          chmod +x "dist/ClarityStrip-macOS/Install ClarityStrip.command"
+          S="dist/ClarityStrip-macOS/Install ClarityStrip.command"
+          cat > "$S" <<'INSTALLER'
+          #!/bin/bash
+          # Double-click (or right-click > Open) to install ClarityStrip for DaVinci Resolve.
+          cd "$(dirname "$0")"
+          echo "Installing ClarityStrip (you will be asked for your Mac password)..."
+          sudo mkdir -p /Library/Audio/Plug-Ins/VST3 /Library/Audio/Plug-Ins/Components
+          sudo rm -rf /Library/Audio/Plug-Ins/VST3/ClarityStrip.vst3 /Library/Audio/Plug-Ins/Components/ClarityStrip.component
+          sudo cp -R ClarityStrip.vst3 /Library/Audio/Plug-Ins/VST3/
+          sudo cp -R ClarityStrip.component /Library/Audio/Plug-Ins/Components/
+          sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/ClarityStrip.vst3 /Library/Audio/Plug-Ins/Components/ClarityStrip.component 2>/dev/null
+          killall -9 AudioComponentRegistrar 2>/dev/null
+          echo ""
+          echo "Done! Restart DaVinci Resolve. ClarityStrip is in the Fairlight effects list (VST3 and AU)."
+          read -n 1 -s -r -p "Press any key to close."
+          INSTALLER
+          sed -i '' 's/^          //' "$S"
+          chmod +x "$S"
           cd dist && ditto -c -k --keepParent ClarityStrip-macOS ClarityStrip-macOS.zip
 
       - name: Upload

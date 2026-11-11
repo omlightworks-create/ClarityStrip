@@ -1,1 +1,53 @@
+name: Build ClarityStrip
 
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-14
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ClarityStrip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Run DSP tests
+        run: |
+          if [ -f build/Release/ClarityDSPTest.exe ]; then build/Release/ClarityDSPTest.exe; else build/ClarityDSPTest; fi
+
+      - name: Ad-hoc sign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep -s - build/ClarityStrip_artefacts/Release/VST3/ClarityStrip.vst3
+          codesign --force --deep -s - build/ClarityStrip_artefacts/Release/AU/ClarityStrip.component
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClarityStrip-${{ matrix.name }}
+          path: |
+            ClarityStrip/build/ClarityStrip_artefacts/Release/VST3
+            ClarityStrip/build/ClarityStrip_artefacts/Release/AU
+            ClarityStrip/build/ClarityStrip_artefacts/Release/Standalone

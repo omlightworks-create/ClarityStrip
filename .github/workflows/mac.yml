@@ -1,0 +1,57 @@
+name: Build ClarityStrip (macOS)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ClarityStrip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal - Apple Silicon + Intel)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Run DSP tests
+        run: build/ClarityDSPTest
+
+      - name: Sign (ad-hoc) and verify
+        run: |
+          A=build/ClarityStrip_artefacts/Release
+          codesign --force --deep -s - "$A/VST3/ClarityStrip.vst3"
+          codesign --force --deep -s - "$A/AU/ClarityStrip.component"
+          codesign --force --deep -s - "$A/Standalone/ClarityStrip.app"
+          lipo -info "$A/VST3/ClarityStrip.vst3/Contents/MacOS/ClarityStrip"
+          codesign --verify --deep "$A/AU/ClarityStrip.component" && echo "signatures OK"
+
+      - name: Validate Audio Unit
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/ClarityStrip_artefacts/Release/AU/ClarityStrip.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -v aufx Clst Omau
+
+      - name: Package
+        run: |
+          A=build/ClarityStrip_artefacts/Release
+          mkdir -p dist/ClarityStrip-macOS
+          cp -R "$A/VST3/ClarityStrip.vst3" "$A/AU/ClarityStrip.component" "$A/Standalone/ClarityStrip.app" dist/ClarityStrip-macOS/
+          cp "mac/Install ClarityStrip.command" dist/ClarityStrip-macOS/
+          chmod +x "dist/ClarityStrip-macOS/Install ClarityStrip.command"
+          cd dist && ditto -c -k --keepParent ClarityStrip-macOS ClarityStrip-macOS.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClarityStrip-macOS
+          path: ClarityStrip/dist/ClarityStrip-macOS.zip
